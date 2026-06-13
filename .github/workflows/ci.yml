@@ -31,12 +31,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # 4. Run unit tests
-      - name: Run tests with pytest
+      # 4. Run tests
+      - name: Run pytest
         run: |
           pytest -v
 
-      # 5. Optional: check pipeline import (quick sanity check)
-      - name: Run pipeline smoke test
+      # 5. Smoke test (UPDATED PATH)
+      - name: Pipeline import smoke test
         run: |
-          python -c "import src.pipeline; print('Pipeline imports OK')"
+          python -c "import scripts.pipeline; print('Pipeline imports OK')"
