@@ -1,2 +1,76 @@
+# =========================
+# Python
+# =========================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environment
 .venv/
-data/
+
+# =========================
+# Testing / coverage
+# =========================
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# =========================
+# Logs
+# =========================
+logs/
+*.log
+
+# =========================
+# Data (VERY IMPORTANT for ML projects)
+# =========================
+data/raw/
+data/processed/
+*.csv
+*.parquet
+
+# =========================
+# Jupyter Notebook checkpoints
+# =========================
+.ipynb_checkpoints/
+
+# =========================
+# IDE / Editor
+# =========================
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# =========================
+# OS files
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# ML artifacts
+# =========================
+models/
+*.pkl
+*.joblib
+*.h5
+
+# =========================
+# Matplotlib cache
+# =========================
+.matplotlib/
+
+# =========================
+# MyPy / Ruff / lint caches
+# =========================
+.mypy_cache/
+.ruff_cache/
