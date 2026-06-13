@@ -43,7 +43,6 @@ fraud-detection-model/
 │   ├── feature_engineering.py
 │   ├── data_transformation.py
 │   ├── imbalance_handling.py
-│   └── pipeline.py
 │
 ├── tests/
 │   ├── test_data_loader.py
@@ -54,6 +53,7 @@ fraud-detection-model/
 │   └── test_imbalance_handling.py
 │
 ├── scripts/
+│   └── pipeline.py
 ├── .gitignore
 ├── requirements.txt
 └── README.md
