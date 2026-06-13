@@ -1,0 +1,39 @@
+# Core Data Handling
+pandas>=2.0.0
+numpy>=1.24.0
+
+# Visualization
+matplotlib>=3.7.0
+seaborn>=0.12.0
+
+# Machine Learning Core
+scikit-learn>=1.3.0
+
+# Imbalanced Learning (SMOTE)
+imbalanced-learn>=0.11.0
+
+# Jupyter Environment
+jupyter>=1.0.0
+notebook>=6.5.0
+ipykernel>=6.0.0
+
+# Optional but useful for progress tracking
+tqdm>=4.66.0
+
+# Performance / warnings control
+scipy>=1.10.0
+
+# Data formatting / reporting 
+tabulate>=0.9.0
+
+# Advanced 
+xgboost>=2.0.0
+lightgbm>=4.0.0
+
+# Model explainability (VERY GOOD for fraud projects)
+shap>=0.44.0
+
+# Better notebook visuals
+plotly>=5.18.0
+
+pytest
