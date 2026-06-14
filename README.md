@@ -1,14 +1,22 @@
-# Task 1: Data Analysis and Preprocessing
+# Fraud Detection Model Project
 
 ## Overview
 
-This project focuses on preparing fraud detection datasets for machine learning by performing data cleaning, exploratory data analysis (EDA), feature engineering, data transformation, geolocation enrichment, and class imbalance handling.
+This project is a complete end-to-end fraud detection system covering:
 
-The goal is to produce clean, feature-rich datasets that are ready for model training and evaluation.
+- Data analysis and preprocessing (Task 1)
+- Model training and evaluation (Task 2)
+- Cross-validation and model comparison
+- Feature engineering and imbalance handling
+- Production-ready ML pipeline structure
+
+The goal is to build a robust, explainable, and high-performing fraud detection system using both classical ML and ensemble methods.
+
+---
 
 ## Project Structure
 
-```text
+````text
 fraud-detection-model/
 │
 ├── .github/
@@ -28,13 +36,17 @@ fraud-detection-model/
 │       ├── fraud_train.csv
 │       ├── fraud_test.csv
 │       ├── fraud_train_balanced.csv
-│       └── creditcard_cleaned.csv
+│       ├── creditcard_cleaned.csv
+│       └── model_ready_features/
 │
 ├── logs/
 │   └── pipeline.log
 │
 ├── notebooks/
-│   └── task1_eda.ipynb
+│   ├── eda-creditcard.ipynb
+│   ├── eda-fraud-data.ipynb
+│   ├── feature-engineering.ipynb
+│   └── modeling.ipynb
 │
 ├── src/
 │   ├── data_loader.py
@@ -43,6 +55,9 @@ fraud-detection-model/
 │   ├── feature_engineering.py
 │   ├── data_transformation.py
 │   ├── imbalance_handling.py
+│   ├── train_models.py
+│   ├── cross_validate.py
+│   └── evaluation.py
 │
 ├── tests/
 │   ├── test_data_loader.py
@@ -50,79 +65,104 @@ fraud-detection-model/
 │   ├── test_geolocation.py
 │   ├── test_feature_engineering.py
 │   ├── test_data_transformation.py
-│   └── test_imbalance_handling.py
+│   ├── test_imbalance_handling.py
+│   └── test_models.py
 │
 ├── scripts/
-│   └── pipeline.py
+│
+├── models/
+│   ├── logistic_regression/
+│   └── xgboost/
+│
 ├── .gitignore
 ├── requirements.txt
 └── README.md
-```
 
-## Work Completed
+``` text
+
+
+# Work Completed
+
+## Task 1: Data Analysis and Preprocessing
 
 ### Data Cleaning
-
-- Removed duplicate records.
-- Handled missing values through appropriate validation and cleaning procedures.
-- Corrected data types for timestamps, IP addresses, and target variables.
-- Generated cleaned datasets for both Fraud_Data and CreditCard datasets.
+- Removed duplicate records
+- Handled missing values
+- Fixed incorrect data types
+- Standardized target labels
 
 ### Exploratory Data Analysis (EDA)
-
-- Analyzed distributions of key numerical and categorical features.
-- Examined relationships between features and fraud labels.
-- Quantified class imbalance in both datasets.
-- Investigated fraud patterns across countries after geolocation enrichment.
+- Distribution analysis of numerical and categorical features
+- Fraud vs non-fraud imbalance analysis
+- Time-based fraud pattern discovery
+- Country-level fraud behavior (geolocation enriched)
 
 ### Geolocation Integration
-
-- Converted IP addresses into integer format.
-- Mapped transactions to countries using range-based IP lookups.
-- Identified geographic fraud trends and country-level fraud statistics.
+- Converted IP addresses to integer format
+- Mapped IP ranges to countries
+- Identified high-risk regions
 
 ### Feature Engineering
+Created behavioral fraud indicators:
 
-Created additional fraud-detection features including:
-
-- `hour_of_day`
-- `day_of_week`
-- `time_since_signup`
-- `user_txn_count`
-- `user_txn_velocity`
-- `is_same_day`
-
-These features capture temporal behavior, account activity, and transaction velocity patterns commonly associated with fraudulent activity.
+- hour_of_day
+- day_of_week
+- time_since_signup
+- transaction_count
+- transactions_last_24h
+- user_velocity_features
+- is_same_day_transaction
 
 ### Data Transformation
-
-- Applied one-hot encoding to categorical variables.
-- Scaled numerical features using StandardScaler.
-- Generated model-ready feature matrices for training and testing.
+- One-hot encoding for categorical variables
+- Feature scaling using StandardScaler
+- Final model-ready datasets created
 
 ### Class Imbalance Handling
+- Applied resampling ONLY on training data
+- Preserved original test distribution for realistic evaluation
+- Documented class imbalance ratios
 
-- Applied resampling techniques on the training set only.
-- Documented class distributions before and after resampling.
-- Preserved the original test distribution to ensure realistic model evaluation.
+---
 
-## Deliverables
+## Task 2: Model Training and Evaluation
 
-- Cleaned datasets
-- Geolocation-enriched datasets
-- Feature-engineered datasets
-- Train/Test splits
-- Balanced training datasets
-- EDA findings and visualizations
-- Feature engineering documentation
-- Resampling justification
+### Baseline Models
+- Logistic Regression trained with `class_weight="balanced"`
+- Threshold tuning for optimal F1-score
+- Interpretable baseline for benchmarking
 
-## Technologies Used
+### Ensemble Models
+- XGBoost classifier for both datasets
+- Tuned hyperparameters:
+  - max_depth
+  - learning_rate
+  - subsample
+  - colsample_bytree
+- Used `scale_pos_weight` instead of SMOTE
+- Improved handling of extreme imbalance
 
-- Python
-- Pandas
-- NumPy
-- Matplotlib
-- Scikit-learn
-- Pytest
-- GitHub Actions
+### Evaluation Metrics
+- ROC-AUC
+- AUC-PR (primary metric)
+- F1-score
+- Confusion matrix
+- Precision-Recall curves
+
+### Cross-Validation
+- Stratified K-Fold (k=5)
+- Evaluated using:
+  - F1-score
+  - ROC-AUC
+  - AUC-PR
+- Ensured no data leakage
+
+### Model Comparison
+- Logistic Regression vs XGBoost
+- Selected best model based on AUC-PR
+- XGBoost selected as final model
+
+### Interpretability
+- SHAP analysis for feature importance
+- Global and local explanations for fraud predictions
+````
