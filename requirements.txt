@@ -37,3 +37,5 @@ shap>=0.44.0
 plotly>=5.18.0
 
 pytest
+
+joblib
