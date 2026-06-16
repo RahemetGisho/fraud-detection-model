@@ -1,11 +1,5 @@
 """
-Data Transformation (Encoding & Scaling)
-
-Guarantees:
-✔ Correct feature selection: Raw identifiers are cleanly omitted.
-✔ No accidental column leaks: Explicit alignment prevents shape mismatches.
-✔ Correct categorical encoding: One-Hot Encodes text fields safely.
-✔ Safe scaling boundaries: Scales continuous features ONLY (protects OHE features).
+data_transformation.py (Encoding & Scaling)
 """
 
 import numpy as np
@@ -20,11 +14,13 @@ _FRAUD_DROP_COLS = [
     "signup_time",
     "purchase_time",
     "ip_address",
+    "country",          # DROPPED: Avoids 200+ raw high-cardinality dummy columns
 ]
 
-_FRAUD_CAT_COLS = ["source", "browser", "sex", "country"]
+# Categorical columns to one-hot encode (country removed safely)
+_FRAUD_CAT_COLS = ["source", "browser", "sex"]
 
-# Continuous features requiring scaling (Excludes OHE binary flags)
+# Continuous features requiring scaling (Updated with our 3 engineered metrics)
 _FRAUD_NUM_SCALE_COLS = [
     "purchase_value", 
     "age", 
@@ -37,7 +33,10 @@ _FRAUD_NUM_SCALE_COLS = [
     "transactions_per_hour", 
     "avg_purchase_value", 
     "purchase_deviation", 
-    "time_since_prev_txn"
+    "time_since_prev_txn",
+    "country_fraud_risk",         # INJECTED: Scaled target-encoded risk weights
+    "platform_30min_velocity",    # INJECTED: Scaled multi-account velocity window
+    "cohort_purchase_deviation"   # INJECTED: Scaled behavioral cohort deviation score
 ]
 
 # CORE TRANSFORM (FRAUD DATASET)
@@ -57,17 +56,21 @@ def transform_fraud_data(df: pd.DataFrame,
             inplace=True,
             errors="ignore")
 
-    # 3. Scale Continuous Features Only 
+    # 3. Scale Continuous Features Only (Including newly engineered columns)
+    # Ensure any required column missing from a truncated inference payload fails safely or fills gracefully
+    active_scale_cols = [c for c in _FRAUD_NUM_SCALE_COLS if c in df.columns]
+    
     if fit:
         scaler = StandardScaler()
-        df[_FRAUD_NUM_SCALE_COLS] = scaler.fit_transform(df[_FRAUD_NUM_SCALE_COLS])
+        df[active_scale_cols] = scaler.fit_transform(df[active_scale_cols])
     else:
         if scaler is None:
             raise ValueError("An instantiated training scaler must be provided for test transform.")
-        df[_FRAUD_NUM_SCALE_COLS] = scaler.transform(df[_FRAUD_NUM_SCALE_COLS])
+        df[active_scale_cols] = scaler.transform(df[active_scale_cols])
 
     # 4. Categorical Encoding (OHE) 
-    df = pd.get_dummies(df, columns=_FRAUD_CAT_COLS, drop_first=False)
+    active_cat_cols = [c for c in _FRAUD_CAT_COLS if c in df.columns]
+    df = pd.get_dummies(df, columns=active_cat_cols, drop_first=False)
     bool_cols = df.select_dtypes(include=bool).columns
     df[bool_cols] = df[bool_cols].astype(int)
 
