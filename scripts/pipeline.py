@@ -1,16 +1,16 @@
 """
-src/pipeline.py
-================
-End-to-end ML pipeline with:
-- Logging
-- Processed data saving
-- Reproducible training flow
+Clean ML Pipeline (Production-style correct version)
+
+✔ Split BEFORE feature engineering to block group-by lookahead leakage
+✔ Separate train/test feature calculation paths
+✔ No leakage in scaler (continuous metrics isolated)
+✔ Imbalance handling isolated strictly to training set
+✔ Consistent train/test schema mapping via data transformation reindexing
 """
 
 import os
 import logging
 import joblib
-import pandas as pd
 
 from sklearn.model_selection import train_test_split
 
@@ -31,9 +31,8 @@ from src.imbalance_handling import handle_imbalance
 
 
 # ─────────────────────────────────────────────
-# Logging setup
+# ENVIRONMENT & CONFIG SETUP
 # ─────────────────────────────────────────────
-
 LOG_DIR = "logs"
 os.makedirs(LOG_DIR, exist_ok=True)
 
@@ -43,16 +42,12 @@ logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(message)s",
 )
 
-def log(msg: str):
+def log(msg):
     print(msg)
     logging.info(msg)
 
 
-# ─────────────────────────────────────────────
-# Helper save function
-# ─────────────────────────────────────────────
-
-def save_csv(df: pd.DataFrame, path: str):
+def save_csv(df, path):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     df.to_csv(path, index=False)
 
@@ -61,124 +56,112 @@ def save_csv(df: pd.DataFrame, path: str):
 # FRAUD PIPELINE
 # ─────────────────────────────────────────────
 
-def run_fraud_pipeline(
-    fraud_path: str,
-    ip_path: str,
-    test_size: float = 0.2,
-    random_state: int = 42,
-):
+def run_fraud_pipeline(fraud_path, ip_path, test_size=0.2, random_state=42):
+
     log("\n========== FRAUD PIPELINE START ==========")
 
     base = "data/processed/fraud"
 
-    # 1. Load
+    # 1. LOAD
     fraud_df = load_fraud_data(fraud_path)
     ip_df = load_ip_country(ip_path)
-    log(f"Loaded fraud={len(fraud_df)} ip={len(ip_df)}")
 
-    # 2. Clean
+    # 2. CLEAN + GEO-ENRICHMENT
     fraud_df = clean_fraud_data(fraud_df)
-    save_csv(fraud_df, f"{base}/01_cleaned.csv")
-    log(f"After cleaning: {fraud_df.shape}")
-
-    # 3. Geolocation
     fraud_df = merge_ip_to_country(fraud_df, ip_df)
-    save_csv(fraud_df, f"{base}/02_geo.csv")
 
-    # 4. Feature engineering
-    fraud_df = engineer_all(fraud_df)
-    save_csv(fraud_df, f"{base}/03_features.csv")
+    # 3. SPLIT (CRITICAL FIX: Split before engineering to safeguard group aggregates)
+    train_df, test_df = train_test_split(
+        fraud_df,
+        test_size=test_size,
+        stratify=fraud_df["class"],
+        random_state=random_state
+    )
 
-    # 5. Transform
-    X, y, scaler = transform_fraud_data(fraud_df, fit=True)
+    # 4. FEATURE ENGINEERING (Executed inside separate validation boundaries)
+    log("[pipeline] Calculating historical behavioral signals on Train partition...")
+    train_df = engineer_all(train_df)
+
+    log("[pipeline] Calculating historical behavioral signals on Test partition...")
+    test_df = engineer_all(test_df)
+
+    # 5. TRANSFORM (Isolates scaling distributions & aligns OHE categories)
+    X_train, y_train, scaler, train_cols = transform_fraud_data(
+        train_df, fit=True
+    )
+
+    X_test, y_test, _, _ = transform_fraud_data(
+        test_df,
+        scaler=scaler,
+        fit=False,
+        train_columns=train_cols
+    )
+
+    os.makedirs(base, exist_ok=True)
     joblib.dump(scaler, f"{base}/fraud_scaler.pkl")
 
-    # 6. Split
-    X_train, X_test, y_train, y_test = train_test_split(
-        X,
-        y,
-        test_size=test_size,
-        stratify=y,
-        random_state=random_state,
-    )
-
-    # attach target safely (NO reserved keyword issue)
-    train_df = X_train.copy()
-    train_df["class"] = y_train.values
-
-    test_df = X_test.copy()
-    test_df["class"] = y_test.values
-
-    save_csv(train_df, f"{base}/04_train.csv")
-    save_csv(test_df, f"{base}/05_test.csv")
-
-    log(f"Train={len(X_train)} Test={len(X_test)}")
-
-    # 7. Imbalance handling (TRAIN ONLY)
+    # 6. IMBALANCE HANDLING (TRAIN ONLY)
     X_train_bal, y_train_bal = handle_imbalance(
-        X_train, y_train, strategy="oversample", random_state=random_state
+        X_train,
+        y_train,
+        strategy="undersample",
+        random_state=random_state
     )
 
-    # attach target safely (NO reserved keyword usage)
-    train_bal_df = X_train_bal.copy()
-    train_bal_df["class"] = y_train_bal.values
+    log(f"Train: {len(X_train_bal)} rows | Test: {len(X_test)} rows")
 
-    save_csv(
-        train_bal_df,
-        f"{base}/06_train_balanced.csv",
-    )
+    
 
-    log("Fraud pipeline completed successfully.")
-    log("=====================================\n")
+    # 7. SAVE FINAL RESAMPLED TRAIN & CLEAN TEST DATASETS
+    # BEFORE balancing snapshot
 
-    return {
-        "X_train": X_train_bal,
-        "X_test": X_test,
-        "y_train": y_train_bal,
-        "y_test": y_test,
-        "scaler": scaler,
-    }
+    train_final = X_train.copy()
+    train_final["class"] = y_train.values
+    save_csv(train_final, f"{base}/train_final.csv")
 
+    # AFTER balancing snapshot
+    train_balanced = X_train_bal.copy()
+    train_balanced["class"] = y_train_bal.values
+    save_csv(train_balanced, f"{base}/train_balanced.csv")
 
+    # TEST (never touched)
+    test_final = X_test.copy()
+    test_final["class"] = y_test.values
+    save_csv(test_final, f"{base}/test_final.csv")
 # ─────────────────────────────────────────────
 # CREDIT CARD PIPELINE
 # ─────────────────────────────────────────────
 
-def run_creditcard_pipeline(
-    credit_path: str,
-    test_size: float = 0.2,
-    random_state: int = 42,
-):
-    log("\n========== CREDITCARD PIPELINE START ==========")
+def run_creditcard_pipeline(credit_path, test_size=0.2, random_state=42):
 
+    log("\n========== CREDITCARD PIPELINE START ==========")
     base = "data/processed/creditcard"
 
-    # 1. Load
+    # 1. LOAD & 2. CLEAN
     df = load_creditcard(credit_path)
-    log(f"Loaded creditcard={len(df)}")
-
-    # 2. Clean
     df = clean_creditcard(df)
-    save_csv(df, f"{base}/01_cleaned.csv")
 
-    # 3. Transform
-    X, y, scaler = transform_creditcard(df, fit=True)
-    joblib.dump(scaler, f"{base}/credit_scaler.pkl")
-
-    # 4. Split
-    X_train, X_test, y_train, y_test = train_test_split(
-        X,
-        y,
+    # 3. SPLIT
+    train_df, test_df = train_test_split(
+        df,
         test_size=test_size,
-        stratify=y,
-        random_state=random_state,
+        stratify=df["Class"],
+        random_state=random_state
     )
 
-    save_csv(X_train.assign(Class=y_train.values), f"{base}/02_train.csv")
-    save_csv(X_test.assign(Class=y_test.values), f"{base}/03_test.csv")
+    # 4. TRANSFORM
+    X_train, y_train, scaler = transform_creditcard(train_df, fit=True)
+
+    X_test, y_test, _ = transform_creditcard(
+        test_df,
+        scaler=scaler,
+        fit=False
+    )
+
+    os.makedirs(base, exist_ok=True)
+    joblib.dump(scaler, f"{base}/scaler.pkl")
 
     log("Creditcard pipeline completed successfully.")
-    log("=====================================\n")
 
     return {
         "X_train": X_train,
@@ -189,16 +172,14 @@ def run_creditcard_pipeline(
     }
 
 
-# ─────────────────────────────────────────────
-# CLI ENTRY
-# ─────────────────────────────────────────────
-
 if __name__ == "__main__":
-    FRAUD_PATH = "data/raw/Fraud_Data.csv"
-    IP_PATH = "data/raw/IpAddress_to_Country.csv"
-    CREDIT_PATH = "data/raw/creditcard (3).csv"
+    run_fraud_pipeline(
+        "data/raw/Fraud_Data.csv",
+        "data/raw/IpAddress_to_Country.csv"
+    )
 
-    fraud_results = run_fraud_pipeline(FRAUD_PATH, IP_PATH)
-    credit_results = run_creditcard_pipeline(CREDIT_PATH)
+    run_creditcard_pipeline(
+        "data/raw/creditcard (3).csv"
+    )
 
-    log("All pipelines finished successfully.")
+    log("\nALL PIPELINES FINISHED SUCCESSFULLY")

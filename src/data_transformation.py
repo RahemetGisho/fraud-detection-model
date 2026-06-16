@@ -1,24 +1,13 @@
 """
 src/data_transformation.py
 ===========================
-Task 1 — Step 5: Data Transformation
+Task 1 — Step 5: Data Transformation (Encoding & Scaling)
 
-Responsibilities:
-  1. Drop columns that are identifiers or raw timestamps (not model inputs).
-  2. One-hot encode categorical features.
-  3. Scale numerical features with StandardScaler.
-
-Why StandardScaler?
-  Logistic Regression and distance-based models are sensitive to feature
-  magnitude. StandardScaler (μ=0, σ=1) brings all features onto the same
-  scale without distorting their distributions.  MinMaxScaler would clip
-  outliers into the [0,1] range, but fraud data has extreme outliers
-  (e.g. very high purchase values) that carry signal — we want to keep
-  their relative magnitude.
-
-The scaler is returned so it can be:
-  - Saved and reused at inference time (critical for production).
-  - Applied to the test set with the SAME parameters (no data leakage).
+Guarantees:
+✔ Correct feature selection: Raw identifiers are cleanly omitted.
+✔ No accidental column leaks: Explicit alignment prevents shape mismatches.
+✔ Correct categorical encoding: One-Hot Encodes text fields safely.
+✔ Safe scaling boundaries: Scales continuous features ONLY (protects OHE features).
 """
 
 import numpy as np
@@ -26,112 +15,108 @@ import pandas as pd
 from sklearn.preprocessing import StandardScaler
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Fraud_Data
-# ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────
+# CONFIG (Maintains explicit data schema boundaries)
+# ─────────────────────────────────────────────────────────────
 
-# Columns to drop before modelling — these are IDs, raw timestamps,
-# or already encoded as derived features
 _FRAUD_DROP_COLS = [
-    "user_id",        # identifier — not a predictive feature
-    "device_id",      # high-cardinality identifier — too many unique values
-    "signup_time",    # replaced by time_since_signup and is_same_day
-    "purchase_time",  # replaced by hour_of_day and day_of_week
-    "ip_address",     # replaced by country after geolocation merge
+    "user_id",
+    "device_id",
+    "signup_time",
+    "purchase_time",
+    "ip_address",
 ]
 
-# Categorical columns to one-hot encode
 _FRAUD_CAT_COLS = ["source", "browser", "sex", "country"]
 
+# Continuous features requiring scaling (Excludes OHE binary flags)
+_FRAUD_NUM_SCALE_COLS = [
+    "purchase_value", 
+    "age", 
+    "hour_of_day", 
+    "day_of_week", 
+    "time_since_signup", 
+    "user_txn_count", 
+    "user_txn_velocity", 
+    "account_age_days", 
+    "transactions_per_hour", 
+    "avg_purchase_value", 
+    "purchase_deviation", 
+    "time_since_prev_txn"
+]
+
+
+# ─────────────────────────────────────────────────────────────
+# CORE TRANSFORM (FRAUD DATASET)
+# ─────────────────────────────────────────────────────────────
 
 def transform_fraud_data(df: pd.DataFrame,
-                          scaler: StandardScaler = None,
-                          fit: bool = True):
+                         scaler: StandardScaler = None,
+                         fit: bool = True,
+                         train_columns: list = None):
     """
-    Prepare the feature-engineered Fraud_Data for modelling.
-
-    Parameters
-    ----------
-    df     : DataFrame that has passed through feature_engineering.engineer_all.
-    scaler : An existing fitted StandardScaler.  Pass one when transforming
-             the test set (fit=False) to avoid data leakage.
-    fit    : If True, fit a new scaler on df and return it.
-             If False, use the provided scaler — transform only.
-
-    Returns
-    -------
-    X      : pd.DataFrame — scaled, encoded feature matrix.
-    y      : pd.Series    — target (0/1).
-    scaler : fitted StandardScaler (None if fit=False and none provided).
+    Transforms data schema safely:
+    - Train (fit=True): Fits scaler, performs OHE, captures base feature layout.
+    - Test (fit=False): Reuses training scaler and forces column alignment.
     """
     df = df.copy()
 
-    # ── Separate target ────────────────────────────────────────────────────
+    # ── 1. Target Extraction ──────────────────────────────────
     y = df["class"].astype(int)
     df.drop(columns=["class"], inplace=True)
 
-    # ── Drop identifier / raw timestamp columns ────────────────────────────
-    drop = [c for c in _FRAUD_DROP_COLS if c in df.columns]
-    df.drop(columns=drop, inplace=True)
+    # ── 2. Structural Pruning (Feature Selection) ──────────────
+    df.drop(columns=[c for c in _FRAUD_DROP_COLS if c in df.columns],
+            inplace=True,
+            errors="ignore")
 
-    # ── One-hot encode categoricals ────────────────────────────────────────
-    cat_cols = [c for c in _FRAUD_CAT_COLS if c in df.columns]
-    df = pd.get_dummies(df, columns=cat_cols, drop_first=False)
-    # Ensure all dummy columns are int (some pandas versions return bool)
+    # ── 3. Scale Continuous Features Only ─────────────────────
+    # Must happen before OHE or target column alignment to isolate true numerical ranges
+    if fit:
+        scaler = StandardScaler()
+        df[_FRAUD_NUM_SCALE_COLS] = scaler.fit_transform(df[_FRAUD_NUM_SCALE_COLS])
+    else:
+        if scaler is None:
+            raise ValueError("An instantiated training scaler must be provided for test transform.")
+        df[_FRAUD_NUM_SCALE_COLS] = scaler.transform(df[_FRAUD_NUM_SCALE_COLS])
+
+    # ── 4. Categorical Encoding (OHE) ─────────────────────────
+    df = pd.get_dummies(df, columns=_FRAUD_CAT_COLS, drop_first=False)
+
+    # Coerce categorical booleans to numeric flag spaces (0/1)
     bool_cols = df.select_dtypes(include=bool).columns
     df[bool_cols] = df[bool_cols].astype(int)
 
-    # ── Scale numerical features ───────────────────────────────────────────
-    num_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-
+    # ── 5. Schema Alignment (Prevents Out-of-Vocabulary Leaks) ─
     if fit:
-        scaler = StandardScaler()
-        df[num_cols] = scaler.fit_transform(df[num_cols])
+        train_columns = df.columns.tolist()
     else:
-        if scaler is None:
-            raise ValueError(
-                "fit=False requires a pre-fitted scaler to be passed."
-            )
-        df[num_cols] = scaler.transform(df[num_cols])
+        if train_columns is None:
+            raise ValueError("train_columns must be provided for test transform alignment.")
+        # Drops unseen test categories, adds missing train categories as 0
+        df = df.reindex(columns=train_columns, fill_value=0)
 
-    print(f"[data_transformation] Fraud_Data X shape : {df.shape}")
-    print(f"[data_transformation] Target distribution:\n"
-          f"  {y.value_counts().to_dict()}")
-    return df, y, scaler
+    mode = "TRAIN" if fit else "TEST"
+    print(f"[data_transformation] Fraud {mode} shape: {df.shape}")
+
+    return df, y, scaler, train_columns
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# CreditCard
-# ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────
+# CREDIT CARD TRANSFORM
+# ─────────────────────────────────────────────────────────────
 
 def transform_creditcard(df: pd.DataFrame,
-                          scaler: StandardScaler = None,
-                          fit: bool = True):
+                         scaler: StandardScaler = None,
+                         fit: bool = True):
     """
-    Prepare the CreditCard dataset for modelling.
-
-    V1-V28 are already PCA-transformed (zero-mean by construction), so
-    only Time and Amount need scaling.
-
-    Parameters
-    ----------
-    df     : cleaned CreditCard DataFrame.
-    scaler : existing fitted StandardScaler (for test set transformation).
-    fit    : True → fit new scaler; False → transform only.
-
-    Returns
-    -------
-    X      : pd.DataFrame.
-    y      : pd.Series — target (Class 0/1).
-    scaler : fitted StandardScaler on [Time, Amount].
+    Applies dedicated continuous scaling to credit card dataset features.
     """
     df = df.copy()
 
-    # Separate target
     y = df["Class"].astype(int)
     df.drop(columns=["Class"], inplace=True)
 
-    # Scale Time and Amount — V1-V28 are already on a comparable PCA scale
     scale_cols = ["Time", "Amount"]
 
     if fit:
@@ -139,12 +124,10 @@ def transform_creditcard(df: pd.DataFrame,
         df[scale_cols] = scaler.fit_transform(df[scale_cols])
     else:
         if scaler is None:
-            raise ValueError(
-                "fit=False requires a pre-fitted scaler to be passed."
-            )
+            raise ValueError("An instantiated training scaler must be provided for test transform.")
         df[scale_cols] = scaler.transform(df[scale_cols])
 
-    print(f"[data_transformation] CreditCard X shape : {df.shape}")
-    print(f"[data_transformation] Target distribution:\n"
-          f"  {y.value_counts().to_dict()}")
+    mode = "TRAIN" if fit else "TEST"
+    print(f"[data_transformation] CreditCard {mode} X shape : {df.shape}")
+
     return df, y, scaler
