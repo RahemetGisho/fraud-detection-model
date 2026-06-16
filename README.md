@@ -1,4 +1,4 @@
-# Fraud Detection Model Project
+# Fraud Detection Model
 
 ## Overview
 
@@ -31,7 +31,7 @@ fraud-detection-model/
 
 ## Work Completed
 
-### Task 1: Data Analysis and Preprocessing
+### 1: Data Analysis and Preprocessing
 
 The dataset was cleaned, explored, and transformed into a model-ready format.
 
@@ -44,7 +44,7 @@ The dataset was cleaned, explored, and transformed into a model-ready format.
 
 ---
 
-### Task 2: Model Building and Evaluation
+### 2: Model Building and Evaluation
 
 Multiple models were trained and evaluated under imbalanced classification settings.
 
@@ -56,7 +56,7 @@ Multiple models were trained and evaluated under imbalanced classification setti
 
 ---
 
-### Task 3: Model Explainability (SHAP)
+### 3: Model Explainability (SHAP)
 
 Model interpretability was introduced to understand fraud prediction behavior.
 
