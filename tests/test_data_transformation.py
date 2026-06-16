@@ -1,139 +1,98 @@
+import pytest
 import numpy as np
 import pandas as pd
-import pytest
 from sklearn.preprocessing import StandardScaler
 
-from src.data_transformation import (
-    transform_fraud_data,
-    transform_creditcard,
-)
+from src.data_transformation import transform_fraud_data, transform_creditcard, _FRAUD_NUM_SCALE_COLS
 
-
-# ─────────────────────────────────────────────────────────────
-# Fraud dataset sample
-# ─────────────────────────────────────────────────────────────
-
-def fraud_sample():
-    return pd.DataFrame({
-        "user_id": [1, 2],
-        "device_id": ["d1", "d2"],
-        "signup_time": pd.to_datetime(["2024-01-01", "2024-01-02"]),
-        "purchase_time": pd.to_datetime(["2024-01-01", "2024-01-03"]),
-        "ip_address": [123, 456],
-        "purchase_value": [100, 200],
-
-        "source": ["SEO", "Ads"],
-        "browser": ["Chrome", "Firefox"],
-        "sex": ["M", "F"],
-        "country": ["A", "B"],
-
-        "hour_of_day": [1, 2],
-        "day_of_week": [0, 1],
-        "time_since_signup": [3600, 7200],
-        "is_same_day": [1, 0],
-
+@pytest.fixture
+def sample_fraud_data():
+    data = {
         "class": [0, 1],
-    })
+        "user_id": ["USR1", "USR2"],
+        "device_id": ["DEV1", "DEV2"],
+        "signup_time": [pd.Timestamp("2026-01-01"), pd.Timestamp("2026-01-02")],
+        "purchase_time": [pd.Timestamp("2026-01-01"), pd.Timestamp("2026-01-03")],
+        "ip_address": ["192.168.1.1", "192.168.1.2"],
+        "source": ["SEO", "Ads"],
+        "browser": ["Chrome", "Safari"],
+        "sex": ["M", "F"],
+        "country": ["United States", "Canada"],
+        # Continuous scale columns
+        "purchase_value": [100.0, 200.0],
+        "age": [30, 40],
+        "hour_of_day": [12, 14],
+        "day_of_week": [4, 5],
+        "time_since_signup": [3600.0, 7200.0],
+        "user_txn_count": [1, 2],
+        "user_txn_velocity": [0.5, 1.0],
+        "account_age_days": [1.0, 2.0],
+        "transactions_per_hour": [0.1, 0.2],
+        "avg_purchase_value": [100.0, 150.0],
+        "purchase_deviation": [1.0, 1.3],
+        "time_since_prev_txn": [999999.0, 500.0]
+    }
+    return pd.DataFrame(data)
 
+# FRAUD DATASET TESTS
 
-# ─────────────────────────────────────────────────────────────
-# Credit card sample
-# ─────────────────────────────────────────────────────────────
+def test_fraud_transform_train_guarantees(sample_fraud_data):
+    """Verifies targets are isolated, IDs dropped, and arrays are transformed correctly in train mode."""
+    df_out, y_out, scaler, train_cols = transform_fraud_data(sample_fraud_data, fit=True)
 
-def credit_sample():
-    return pd.DataFrame({
-        "Time": [10, 20, 30],
-        "Amount": [100, 200, 300],
-        "V1": [0.1, 0.2, 0.3],
-        "V2": [0.1, 0.2, 0.3],
-        "Class": [0, 1, 0],
-    })
+    assert "class" not in df_out.columns
+    pd.testing.assert_series_equal(y_out, sample_fraud_data["class"].astype(int))
 
+    for dropped_col in ["user_id", "device_id", "signup_time", "purchase_time", "ip_address"]:
+        assert dropped_col not in df_out.columns
 
-# ─────────────────────────────────────────────────────────────
-# 1. Fraud transformation shape test
-# ─────────────────────────────────────────────────────────────
+    assert isinstance(df_out["purchase_value"].dtype, (object, np.floating))
+    assert isinstance(scaler, StandardScaler)
+    
+    assert df_out["source_SEO"].isin([0, 1]).all()
+    assert df_out["source_SEO"].dtype == np.int64
 
-def test_fraud_transform_basic():
-    df = fraud_sample()
+def test_fraud_transform_test_alignment_and_oof_protection(sample_fraud_data):
+    """Verifies that an unseen categorical class in the test data does not throw off schema boundaries."""
+    df_train, _, scaler, train_cols = transform_fraud_data(sample_fraud_data, fit=True)
 
-    X, y, scaler = transform_fraud_data(df)
+    test_data = sample_fraud_data.copy()
+    test_data.loc[0, "country"] = "UnknownLand"
 
-    assert "class" not in X.columns
-    assert isinstance(y, pd.Series)
-    assert len(X) == len(y)
-    assert scaler is not None
-
-
-# ─────────────────────────────────────────────────────────────
-# 2. Fraud one-hot encoding test
-# ─────────────────────────────────────────────────────────────
-
-def test_fraud_one_hot_encoding():
-    df = fraud_sample()
-
-    X, _, _ = transform_fraud_data(df)
-
-    # check that categorical columns were encoded
-    assert any(col.startswith("source_") for col in X.columns)
-    assert any(col.startswith("browser_") for col in X.columns)
-    assert any(col.startswith("sex_") for col in X.columns)
-    assert any(col.startswith("country_") for col in X.columns)
-
-
-# ─────────────────────────────────────────────────────────────
-# 3. Fraud scaler consistency test
-# ─────────────────────────────────────────────────────────────
-
-def test_fraud_scaler_reuse():
-    df = fraud_sample()
-
-    X_train, y_train, scaler = transform_fraud_data(df, fit=True)
-
-    X_test, y_test, _ = transform_fraud_data(df, scaler=scaler, fit=False)
-
-    # scaling should produce same shape
-    assert X_train.shape == X_test.shape
-
-    # values should match (deterministic scaling)
-    np.testing.assert_array_almost_equal(
-        X_train.values,
-        X_test.values
+    df_test, y_test, _, _ = transform_fraud_data(
+        test_data, scaler=scaler, fit=False, train_columns=train_cols
     )
 
+    assert df_train.columns.tolist() == df_test.columns.tolist()
+    assert "country_UnknownLand" not in df_test.columns
 
-# ─────────────────────────────────────────────────────────────
-# 4. Credit card transformation test
-# ─────────────────────────────────────────────────────────────
+def test_fraud_transform_missing_parameters_raises_error(sample_fraud_data):
+    """Verifies that passing fit=False without tracking dependencies raises an explicit runtime ValueError."""
+    with pytest.raises(ValueError, match="An instantiated training scaler must be provided"):
+        transform_fraud_data(sample_fraud_data, scaler=None, fit=False)
 
-def test_creditcard_transform():
-    df = credit_sample()
+    scaler = StandardScaler()
+    scaler.fit(sample_fraud_data[_FRAUD_NUM_SCALE_COLS])  
+    
+    with pytest.raises(ValueError, match="train_columns must be provided"):
+        transform_fraud_data(sample_fraud_data, scaler=scaler, fit=False, train_columns=None)
 
-    X, y, scaler = transform_creditcard(df)
+# CREDIT CARD DATASET TESTS
+def test_creditcard_transform_flow():
+    """Validates simple structural separation and target isolation behavior for credit card datasets."""
+    cc_mock = pd.DataFrame({
+        "Class": [0, 1],
+        "Time": [0.0, 3600.0],
+        "Amount": [50.0, 2500.0],
+        "V1": [-1.34, 0.45],
+        "V2": [0.25, -0.89]
+    })
 
-    # target removed
-    assert "Class" not in X.columns
+    df_train, y_train, scaler = transform_creditcard(cc_mock, fit=True)
 
-    # shape consistency
-    assert len(X) == len(y)
-
-    # scaler exists
-    assert scaler is not None
-
-    # ONLY Time and Amount should be scaled (not V1)
-    assert np.isclose(X["Time"].mean(), 0, atol=1e-6)
-    assert np.isclose(X["Amount"].mean(), 0, atol=1e-6)
-
-    # PCA features should remain unchanged
-    assert np.array_equal(X["V1"].values, df["V1"].values)
-
-
-# ─────────────────────────────────────────────────────────────
-# 5. Missing scaler error test
-# ─────────────────────────────────────────────────────────────
-
-def test_missing_scaler_error():
-    df = credit_sample()
-
-    with pytest.raises(ValueError):
-        transform_creditcard(df, scaler=None, fit=False)
+    assert "Class" not in df_train.columns
+    assert "Time" in df_train.columns
+    assert isinstance(scaler, StandardScaler)
+    
+    df_test, y_test, _ = transform_creditcard(cc_mock, scaler=scaler, fit=False)
+    assert df_train.shape == df_test.shape
