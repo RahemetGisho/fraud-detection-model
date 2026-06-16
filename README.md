@@ -2,167 +2,85 @@
 
 ## Overview
 
-This project is a complete end-to-end fraud detection system covering:
+This project is an end-to-end fraud detection system that covers the full machine learning lifecycle—from raw data to explainable model insights. It combines classical machine learning and ensemble methods to build a robust, high-performance, and interpretable fraud detection solution.
 
-- Data analysis and preprocessing (Task 1)
-- Model training and evaluation (Task 2)
-- Cross-validation and model comparison
-- Feature engineering and imbalance handling
-- Production-ready ML pipeline structure
-
-The goal is to build a robust, explainable, and high-performing fraud detection system using both classical ML and ensemble methods.
+The pipeline emphasizes real-world constraints such as class imbalance, feature engineering, and model explainability for business decision-making.
 
 ---
 
 ## Project Structure
 
-````text
+```text
 fraud-detection-model/
 │
-├── .github/
-│   └── workflows/
-│       └── ci.yml
-│
 ├── data/
-│   ├── raw/
-│   │   ├── Fraud_Data.csv
-│   │   ├── IpAddress_to_Country.csv
-│   │   └── creditcard.csv
-│   │
-│   └── processed/
-│       ├── fraud_cleaned.csv
-│       ├── fraud_geo.csv
-│       ├── fraud_engineered.csv
-│       ├── fraud_train.csv
-│       ├── fraud_test.csv
-│       ├── fraud_train_balanced.csv
-│       ├── creditcard_cleaned.csv
-│       └── model_ready_features/
+│   ├── raw/                     # Original datasets
+│   └── processed/              # Cleaned & feature-engineered data
 │
-├── logs/
-│   └── pipeline.log
+├── notebooks/                  # EDA, modeling, SHAP analysis
+├── src/                        # Modular ML pipeline code
+├── models/                     # Saved Logistic Regression & XGBoost models
+├── tests/                      # Unit tests for pipeline components
+├── logs/                       # Training & pipeline logs
+├── scripts/                    # Utility scripts
 │
-├── notebooks/
-│   ├── eda-creditcard.ipynb
-│   ├── eda-fraud-data.ipynb
-│   ├── feature-engineering.ipynb
-│   └── modeling.ipynb
-│
-├── src/
-│   ├── data_loader.py
-│   ├── preprocessing.py
-│   ├── geolocation.py
-│   ├── feature_engineering.py
-│   ├── data_transformation.py
-│   ├── imbalance_handling.py
-│   ├── train_models.py
-│   ├── cross_validate.py
-│   └── evaluation.py
-│
-├── tests/
-│   ├── test_data_loader.py
-│   ├── test_preprocessing.py
-│   ├── test_geolocation.py
-│   ├── test_feature_engineering.py
-│   ├── test_data_transformation.py
-│   ├── test_imbalance_handling.py
-│   └── test_models.py
-│
-├── scripts/
-│
-├── models/
-│   ├── logistic_regression/
-│   └── xgboost/
-│
-├── .gitignore
+├── .github/workflows/         # CI pipeline
 ├── requirements.txt
 └── README.md
+```
 
-``` text
+## Work Completed
 
+### Task 1: Data Analysis and Preprocessing
 
-# Work Completed
+The dataset was cleaned, explored, and transformed into a model-ready format.
 
-## Task 1: Data Analysis and Preprocessing
-
-### Data Cleaning
-- Removed duplicate records
-- Handled missing values
-- Fixed incorrect data types
-- Standardized target labels
-
-### Exploratory Data Analysis (EDA)
-- Distribution analysis of numerical and categorical features
-- Fraud vs non-fraud imbalance analysis
-- Time-based fraud pattern discovery
-- Country-level fraud behavior (geolocation enriched)
-
-### Geolocation Integration
-- Converted IP addresses to integer format
-- Mapped IP ranges to countries
-- Identified high-risk regions
-
-### Feature Engineering
-Created behavioral fraud indicators:
-
-- hour_of_day
-- day_of_week
-- time_since_signup
-- transaction_count
-- transactions_last_24h
-- user_velocity_features
-- is_same_day_transaction
-
-### Data Transformation
-- One-hot encoding for categorical variables
-- Feature scaling using StandardScaler
-- Final model-ready datasets created
-
-### Class Imbalance Handling
-- Applied resampling ONLY on training data
-- Preserved original test distribution for realistic evaluation
-- Documented class imbalance ratios
+- Handled missing values, duplicates, and data type inconsistencies  
+- Performed exploratory data analysis (EDA) on fraud patterns and class imbalance  
+- Integrated geolocation data using IP-to-country mapping  
+- Engineered behavioral features (transaction velocity, time-based patterns, user activity signals)  
+- Applied encoding and feature scaling for model readiness  
+- Addressed class imbalance using training-only resampling strategies  
 
 ---
 
-## Task 2: Model Training and Evaluation
+### Task 2: Model Building and Evaluation
 
-### Baseline Models
-- Logistic Regression trained with `class_weight="balanced"`
-- Threshold tuning for optimal F1-score
-- Interpretable baseline for benchmarking
+Multiple models were trained and evaluated under imbalanced classification settings.
 
-### Ensemble Models
-- XGBoost classifier for both datasets
-- Tuned hyperparameters:
-  - max_depth
-  - learning_rate
-  - subsample
-  - colsample_bytree
-- Used `scale_pos_weight` instead of SMOTE
-- Improved handling of extreme imbalance
+- Built Logistic Regression as a baseline interpretable model  
+- Trained XGBoost as the main ensemble model with hyperparameter tuning  
+- Used ROC-AUC, AUC-PR, F1-score, and confusion matrix for evaluation  
+- Applied stratified 5-fold cross-validation for robust performance estimation  
+- Selected best model based on AUC-PR and recall-performance tradeoffs  
 
-### Evaluation Metrics
-- ROC-AUC
-- AUC-PR (primary metric)
-- F1-score
-- Confusion matrix
-- Precision-Recall curves
+---
 
-### Cross-Validation
-- Stratified K-Fold (k=5)
-- Evaluated using:
-  - F1-score
-  - ROC-AUC
-  - AUC-PR
-- Ensured no data leakage
+### Task 3: Model Explainability (SHAP)
 
-### Model Comparison
-- Logistic Regression vs XGBoost
-- Selected best model based on AUC-PR
-- XGBoost selected as final model
+Model interpretability was introduced to understand fraud prediction behavior.
 
-### Interpretability
-- SHAP analysis for feature importance
-- Global and local explanations for fraud predictions
-````
+- Extracted built-in feature importance from ensemble models  
+- Generated SHAP summary plots for global feature impact analysis  
+- Built SHAP force plots for individual predictions:
+  - True Positive (correct fraud detection)  
+  - False Positive (false alarm)  
+  - False Negative (missed fraud)  
+- Compared SHAP explanations with model-based feature importance  
+- Identified key drivers influencing fraud predictions  
+- Translated insights into actionable business recommendations  
+
+---
+
+### Key Results
+
+- Best Model: XGBoost Classifier  
+- Strong imbalance handling using `scale_pos_weight`  
+- High ROC-AUC and AUC-PR across both datasets  
+- Interpretable fraud detection pipeline using SHAP  
+
+---
+
+### Outcome
+
+This project delivers a production-ready fraud detection system that accurate and explainable, enabling stakeholders to understand model decisions and apply insights to real-world fraud prevention strategies.
