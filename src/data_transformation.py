@@ -14,13 +14,11 @@ _FRAUD_DROP_COLS = [
     "signup_time",
     "purchase_time",
     "ip_address",
-    "country",          # DROPPED: Avoids 200+ raw high-cardinality dummy columns
+    "country",          
 ]
 
-# Categorical columns to one-hot encode (country removed safely)
 _FRAUD_CAT_COLS = ["source", "browser", "sex"]
 
-# Continuous features requiring scaling (Updated with our 3 engineered metrics)
 _FRAUD_NUM_SCALE_COLS = [
     "purchase_value", 
     "age", 
@@ -34,9 +32,9 @@ _FRAUD_NUM_SCALE_COLS = [
     "avg_purchase_value", 
     "purchase_deviation", 
     "time_since_prev_txn",
-    "country_fraud_risk",         # INJECTED: Scaled target-encoded risk weights
-    "platform_30min_velocity",    # INJECTED: Scaled multi-account velocity window
-    "cohort_purchase_deviation"   # INJECTED: Scaled behavioral cohort deviation score
+    "country_fraud_risk",         
+    "platform_30min_velocity",    
+    "cohort_purchase_deviation"   
 ]
 
 # CORE TRANSFORM (FRAUD DATASET)
@@ -57,7 +55,6 @@ def transform_fraud_data(df: pd.DataFrame,
             errors="ignore")
 
     # 3. Scale Continuous Features Only (Including newly engineered columns)
-    # Ensure any required column missing from a truncated inference payload fails safely or fills gracefully
     active_scale_cols = [c for c in _FRAUD_NUM_SCALE_COLS if c in df.columns]
     
     if fit:
