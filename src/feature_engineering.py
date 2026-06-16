@@ -3,30 +3,53 @@ src/feature_engineering.py
 ==========================
 Task 1 — Step 4: Feature Engineering  (Fraud_Data only)
 
-New features created:
+Final Feature Set Summary:
+---------------------------
+The Targets:
+ - class: Keep (Target variable Y)
 
-┌──────────────────────┬──────────────────────────────────────────────────────┐
-│ Feature              │ Why it helps detect fraud                            │
-├──────────────────────┼──────────────────────────────────────────────────────┤
-│ hour_of_day          │ Fraudsters often operate at unusual hours (late       │
-│                      │ night / early morning) to avoid real-time oversight.  │
-├──────────────────────┼──────────────────────────────────────────────────────┤
-│ day_of_week          │ Fraud patterns differ on weekdays vs weekends —       │
-│                      │ fewer support staff means slower detection.           │
-├──────────────────────┼──────────────────────────────────────────────────────┤
-│ time_since_signup    │ A very short gap between signup and purchase           │
-│ (seconds)            │ (e.g. < 60 s) is a classic account-abuse signal.     │
-├──────────────────────┼──────────────────────────────────────────────────────┤
-│ user_txn_count       │ Total transactions by this user in the dataset.       │
-│                      │ High velocity is a red flag.                          │
-├──────────────────────┼──────────────────────────────────────────────────────┤
-│ user_txn_velocity    │ Transactions per day since signup.  Normalises        │
-│                      │ txn_count by account age to avoid penalising          │
-│                      │ legitimate long-time users.                           │
-├──────────────────────┼──────────────────────────────────────────────────────┤
-│ is_same_day          │ Binary: purchase happened on the same calendar day   │
-│                      │ as signup — often indicates scripted bot behaviour.   │
-└──────────────────────┴──────────────────────────────────────────────────────┘
+The Categorical Features (Require Encoding in Step 5):
+ - source, browser, country, sex
+
+The Behavioral & Temporal Features:
+┌───────────────────────┬──────────────────────────────────────────────────────┐
+│ Feature               │ Why it helps detect fraud                            │
+├───────────────────────┼──────────────────────────────────────────────────────┤
+│ hour_of_day           │ Fraudsters often operate at unusual hours to avoid   │
+│                       │ real-time oversight.                                 │
+├───────────────────────┼──────────────────────────────────────────────────────┤
+│ day_of_week           │ Fraud patterns differ on weekdays vs weekends due to │
+│                       │ changes in security support coverage.                │
+├───────────────────────┼──────────────────────────────────────────────────────┤
+│ time_since_signup     │ A very short gap between signup and purchase         │
+│ (seconds)             │ (e.g. < 60s) is a classic bot/abuse signal.          │
+├───────────────────────┼──────────────────────────────────────────────────────┤
+│ is_same_day           │ Binary flag for calendar-day match; catches rapid    │
+│                       │ scripted account-to-checkout flows.                  │
+├───────────────────────┼──────────────────────────────────────────────────────┤
+│ user_txn_count        │ Total transaction frequency footprint across the     │
+│                       │ available window. High density implies abuse.        │
+├───────────────────────┼──────────────────────────────────────────────────────┤
+│ user_txn_velocity     │ Transactions per day since signup. Normalizes raw    │
+│                       │ counts to avoid penalizing loyal users.              │
+├───────────────────────┼──────────────────────────────────────────────────────┤
+│ account_age_days      │ Continuous asset metric tracked in day units.        │
+├───────────────────────┼──────────────────────────────────────────────────────┤
+│ transactions_per_hour │ Fine-grained velocity snapshot metrics.              │
+├───────────────────────┼──────────────────────────────────────────────────────┤
+│ avg_purchase_value    │ Tracks historical spending patterns for user profiling│
+├───────────────────────┼──────────────────────────────────────────────────────┤
+│ purchase_deviation    │ Identifies anomalous price spikes relative to their  │
+│                       │ normal behavior.                                     │
+├───────────────────────┼──────────────────────────────────────────────────────┤
+│ time_since_prev_txn   │ Sequences transaction pacing. Sudden bursts flag bots│
+└───────────────────────┴──────────────────────────────────────────────────────┘
+
+CRITICAL IMPLEMENTATION NOTE:
+Because this script uses `.transform("count")` and `.transform("mean")` aggregated 
+by `user_id`, you MUST execute `engineer_all(df)` SEPARATELY on your Train and 
+Test partitions after splitting. Running this on the raw full dataset combined 
+will introduce massive Lookahead Data Leakage.
 """
 
 import numpy as np
@@ -106,12 +129,10 @@ def engineer_velocity_features(df: pd.DataFrame) -> pd.DataFrame:
     Adds:
       - user_txn_count    (int)   — how many rows share this user_id.
       - user_txn_velocity (float) — txn_count / days_since_signup.
-        For users with time_since_signup = 0 (same second as signup), velocity
-        is set to user_txn_count directly (1 day assumed as denominator).
     """
     df = df.copy()
 
-    # Count of transactions per user across the whole dataset
+    # Count of transactions per user across the dataset
     df["user_txn_count"] = df.groupby("user_id")["user_id"].transform("count")
 
     # Transactions per day since signup
@@ -128,27 +149,80 @@ def engineer_velocity_features(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def engineer_behavior_features(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Additional behavioral fraud features.
+
+    Adds:
+      - account_age_days
+      - transactions_per_hour
+      - avg_purchase_value
+      - purchase_deviation
+      - time_since_prev_txn
+    """
+    df = df.copy()
+
+    # Account age in days
+    df["account_age_days"] = df["time_since_signup"] / 86_400
+
+    # Transactions per hour since signup
+    hours = df["time_since_signup"] / 3600
+    hours_safe = hours.replace(0, 1)
+
+    df["transactions_per_hour"] = (
+        df["user_txn_count"] / hours_safe
+    )
+
+    # User average purchase amount
+    df["avg_purchase_value"] = (
+        df.groupby("user_id")["purchase_value"]
+        .transform("mean")
+    )
+
+    # Current purchase relative to user's average
+    df["purchase_deviation"] = (
+        df["purchase_value"]
+        / (df["avg_purchase_value"] + 1)
+    )
+
+    # Time since previous transaction
+    df = df.sort_values(["user_id", "purchase_time"])
+
+    df["time_since_prev_txn"] = (
+        df.groupby("user_id")["purchase_time"]
+        .diff()
+        .dt.total_seconds()
+    )
+
+    df["time_since_prev_txn"] = (
+        df["time_since_prev_txn"]
+        .fillna(999999)
+    )
+
+    print(f"[feature_engineering] account_age_days      : mean={df['account_age_days'].mean():.2f}")
+    print(f"[feature_engineering] transactions_per_hour : mean={df['transactions_per_hour'].mean():.4f}")
+    print(f"[feature_engineering] avg_purchase_value    : mean={df['avg_purchase_value'].mean():.2f}")
+    print(f"[feature_engineering] purchase_deviation    : mean={df['purchase_deviation'].mean():.4f}")
+
+    return df
+
+
 def engineer_all(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Apply all feature engineering steps in the correct order.
-
-    Order matters:
-      engineer_signup_features must run before engineer_velocity_features
-      because velocity needs time_since_signup.
-
-    Parameters
-    ----------
-    df : cleaned + geo-enriched Fraud_Data DataFrame.
-
-    Returns
-    -------
-    DataFrame with 6 new columns added.
+    Apply all feature engineering steps systematically.
     """
     original_cols = set(df.columns)
+
     df = engineer_time_features(df)
     df = engineer_signup_features(df)
     df = engineer_velocity_features(df)
+    df = engineer_behavior_features(df)
+
     new_cols = set(df.columns) - original_cols
-    print(f"\n[feature_engineering] New features added ({len(new_cols)}): "
-          f"{sorted(new_cols)}")
+
+    print(
+        f"\n[feature_engineering] New features added "
+        f"({len(new_cols)}): {sorted(new_cols)}"
+    )
+
     return df
