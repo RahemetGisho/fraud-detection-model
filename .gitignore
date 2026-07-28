@@ -59,7 +59,7 @@ Thumbs.db
 # =========================
 # ML artifacts
 # =========================
-models/
+/models/
 *.pkl
 *.joblib
 *.h5
