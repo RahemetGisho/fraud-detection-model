@@ -1,21 +1,9 @@
 """
-src/geolocation.py
-==================
-Task 1 — Step 3: Geolocation Integration
-
+Geolocation Integration
 Responsibilities:
-  1. Ensure ip_address is stored as a proper integer (already done in
-     preprocessing, but verified here as a guard).
+  1. Ensure ip_address is stored as a proper integer 
   2. Merge Fraud_Data with IpAddress_to_Country using a range-based lookup
-     (pd.merge_asof) — NOT a simple key join.
   3. Analyse fraud patterns by country (count + rate).
-
-Why range-based merge?
-  The IP lookup table stores blocks as [lower_bound, upper_bound] integer
-  pairs.  Each transaction's ip_address must be checked against thousands of
-  overlapping blocks.  pd.merge_asof sorts both tables and performs a
-  binary-search-style nearest-lower match, then we filter out IPs that fall
-  above the upper_bound — this is O(N log N) rather than O(N × M).
 """
 
 import os
@@ -30,47 +18,15 @@ _DEFAULT_PLOT_DIR = os.path.join(
     os.path.dirname(__file__), "..", "data", "processed", "plots"
 )
 
-
 def _ensure(plot_dir: str) -> str:
     os.makedirs(plot_dir, exist_ok=True)
     return plot_dir
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Core merge
-# ─────────────────────────────────────────────────────────────────────────────
-
 def merge_ip_to_country(fraud_df: pd.DataFrame,
                          ip_df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Map each transaction's ip_address to a country using range-based lookup.
-
-    Algorithm
-    ---------
-    1. Sort fraud_df by ip_address (ascending).
-    2. Sort ip_df by lower_bound_ip_address (ascending).
-    3. pd.merge_asof(direction='backward') finds, for each ip_address, the
-       ip block whose lower_bound is the largest value ≤ ip_address.
-    4. Check the ip_address is also ≤ upper_bound of that block.
-       If not → the IP falls in a gap between blocks → label 'Unknown'.
-    5. Drop the temporary bound columns.
-    6. Restore original row order (sort by user_id).
-
-    Parameters
-    ----------
-    fraud_df : cleaned Fraud_Data DataFrame with ip_address as int64.
-    ip_df    : IpAddress_to_Country DataFrame with int64 bounds.
-
-    Returns
-    -------
-    fraud_df with an additional 'country' column.
-    """
-    # Guard: ip_address must be int64 for merge_asof dtype matching
     if fraud_df["ip_address"].dtype != np.int64:
         fraud_df = fraud_df.copy()
         fraud_df["ip_address"] = fraud_df["ip_address"].astype(np.int64)
-
-    # Enforce int64 on lookup table bounds as well
     ip_work = ip_df.copy()
     ip_work["lower_bound_ip_address"] = (
         ip_work["lower_bound_ip_address"].astype(np.int64)
@@ -78,12 +34,8 @@ def merge_ip_to_country(fraud_df: pd.DataFrame,
     ip_work["upper_bound_ip_address"] = (
         ip_work["upper_bound_ip_address"].astype(np.int64)
     )
-
-    # Sort both tables on the merge key
     fraud_sorted = fraud_df.sort_values("ip_address").reset_index(drop=False)
     ip_sorted    = ip_work.sort_values("lower_bound_ip_address")
-
-    # Range merge — find the block whose lower_bound ≤ ip_address
     merged = pd.merge_asof(
         fraud_sorted,
         ip_sorted,
@@ -92,18 +44,13 @@ def merge_ip_to_country(fraud_df: pd.DataFrame,
         direction="backward",
     )
 
-    # Validate upper bound — if ip > upper_bound, the IP is between blocks
     in_range = merged["ip_address"] <= merged["upper_bound_ip_address"]
     merged.loc[~in_range, "country"] = "Unknown"
-
-    # Drop helper columns from the lookup table
     merged.drop(
         columns=["lower_bound_ip_address", "upper_bound_ip_address"],
         inplace=True,
         errors="ignore",
     )
-
-    # Restore original row order using the saved original index
     merged.sort_values("index", inplace=True)
     merged.drop(columns=["index"], inplace=True)
     merged.reset_index(drop=True, inplace=True)
@@ -117,28 +64,11 @@ def merge_ip_to_country(fraud_df: pd.DataFrame,
           f"{merged['country'].nunique()}")
     return merged
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Analysis helpers
-# ─────────────────────────────────────────────────────────────────────────────
-
 def fraud_rate_by_country(df: pd.DataFrame,
                            target_col: str = "class",
                            min_transactions: int = 10,
                            top_n: int = 15,
                            plot_dir: str = _DEFAULT_PLOT_DIR) -> pd.DataFrame:
-    """
-    Compute and visualise fraud rates by country.
-
-    Filters countries with fewer than min_transactions to avoid misleading
-    rates from tiny samples (e.g. 1 transaction, 1 fraud = 100% rate but
-    statistically meaningless).
-
-    Returns
-    -------
-    DataFrame with columns: country, total, fraud, fraud_rate.
-    Sorted by fraud_rate descending.
-    """
     _ensure(plot_dir)
 
     stats = (
@@ -148,13 +78,11 @@ def fraud_rate_by_country(df: pd.DataFrame,
     )
     stats["fraud_rate"] = stats["fraud"] / stats["total"]
     stats = stats[stats["total"] >= min_transactions]
-
     print(f"\n[geolocation] Countries with ≥ {min_transactions} transactions: "
           f"{len(stats)}")
 
     top_count = stats.nlargest(top_n, "fraud")
     top_rate  = stats.nlargest(top_n, "fraud_rate")
-
     print(f"\nTop {top_n} by fraud count:\n"
           + top_count[["country", "total", "fraud", "fraud_rate"]].to_string(
               index=False))
@@ -162,7 +90,6 @@ def fraud_rate_by_country(df: pd.DataFrame,
           + top_rate[["country", "total", "fraud", "fraud_rate"]].to_string(
               index=False))
 
-    # ── Plot ──────────────────────────────────────────────────────────────
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 5))
 
     top_count.set_index("country")["fraud"].sort_values().plot(
