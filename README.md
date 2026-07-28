@@ -1,5 +1,7 @@
 # Fraud Detection Model
 
+![CI](https://github.com/RahemetGisho/fraud-detection-model/actions/workflows/ci.yml/badge.svg)
+
 An end-to-end, production-oriented fraud detection system for a FinTech client (Adey Innovations Inc.), covering two transaction streams: e-commerce purchases and bank credit-card transactions.
 
 ## Business Problem
@@ -95,6 +97,6 @@ Run `streamlit run dashboard/app.py` after training to get four tabs: Performanc
 
 ## Author
 
-Rahemet Hussen
+Rahmet Hussen
 `gishorahemeth@gmail.com`
-`https://www.linkedin.com/in/rahemethussen/`
+`linkedin.com/in/rahemethussen/`
